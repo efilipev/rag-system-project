@@ -1,0 +1,382 @@
+# Default values for rag-system Helm chart
+
+global:
+  # Container registry
+  imageRegistry: "docker.io"
+  imagePullSecrets: []
+
+  # Storage class for PersistentVolumes
+  storageClass: "standard"
+
+  # Namespace (if not using --namespace flag)
+  namespace: rag-system
+
+# Application configuration
+config:
+  logLevel: "INFO"
+  embeddingModel: "sentence-transformers/all-MiniLM-L6-v2"
+  vectorDimension: 384
+
+  # LLM Configuration
+  llm:
+    provider: "openai"  # openai, local, ollama
+    defaultModel: "gpt-3.5-turbo"
+    maxTokens: 2000
+    temperature: 0.7
+
+  # Ranking Configuration
+  ranking:
+    type: "cross-encoder"  # cross-encoder, bm25
+    device: "cpu"
+
+  # Security
+  security:
+    enableAuthentication: true
+    enableRateLimiting: true
+    enableSecurityHeaders: true
+
+  # CORS
+  cors:
+    allowedOrigins:
+      - "https://app.example.com"
+    allowCredentials: true
+    maxAge: 600
+
+  # JWT
+  jwt:
+    algorithm: "HS256"
+    accessTokenExpireMinutes: 30
+    refreshTokenExpireDays: 7
+
+  # Rate Limiting
+  rateLimit:
+    requestsPerMinute: 60
+    burst: 10
+
+# Secrets (use external secrets manager in production!)
+secrets:
+  # PostgreSQL
+  postgres:
+    user: "raguser"
+    password: "changeme"  # CHANGE IN PRODUCTION
+
+  # RabbitMQ
+  rabbitmq:
+    user: "raguser"
+    password: "changeme"  # CHANGE IN PRODUCTION
+
+  # MinIO
+  minio:
+    accessKey: "minioadmin"
+    secretKey: "changeme"  # CHANGE IN PRODUCTION
+
+  # JWT Secret (generate with: python3 -c "import secrets; print(secrets.token_urlsafe(64))")
+  jwtSecretKey: "changeme"  # CHANGE IN PRODUCTION
+
+  # OpenAI API Key
+  openaiApiKey: "sk-changeme"  # CHANGE IN PRODUCTION
+
+  # Admin Token
+  adminToken: "changeme"  # CHANGE IN PRODUCTION
+
+# Infrastructure Services
+postgres:
+  enabled: true
+  image:
+    repository: pgvector/pgvector
+    tag: pg16
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      memory: "1Gi"
+      cpu: "500m"
+    limits:
+      memory: "2Gi"
+      cpu: "1000m"
+  persistence:
+    enabled: true
+    size: 20Gi
+  service:
+    port: 5432
+
+redis:
+  enabled: true
+  image:
+    repository: redis
+    tag: 7-alpine
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "2Gi"
+      cpu: "500m"
+  persistence:
+    enabled: true
+    size: 5Gi
+  service:
+    port: 6379
+
+rabbitmq:
+  enabled: true
+  image:
+    repository: rabbitmq
+    tag: 3-management
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+  persistence:
+    enabled: true
+    size: 10Gi
+  service:
+    amqpPort: 5672
+    managementPort: 15672
+
+qdrant:
+  enabled: true
+  image:
+    repository: qdrant/qdrant
+    tag: latest
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      memory: "1Gi"
+      cpu: "500m"
+    limits:
+      memory: "4Gi"
+      cpu: "2000m"
+  persistence:
+    enabled: true
+    size: 50Gi
+  service:
+    httpPort: 6333
+    grpcPort: 6334
+
+minio:
+  enabled: true
+  image:
+    repository: minio/minio
+    tag: latest
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "2Gi"
+      cpu: "1000m"
+  persistence:
+    enabled: true
+    size: 100Gi
+  service:
+    apiPort: 9000
+    consolePort: 9001
+
+# Application Services
+queryAnalysis:
+  enabled: true
+  image:
+    repository: rag-system/query-analysis
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicaCount: 3
+  resources:
+    requests:
+      memory: "2Gi"
+      cpu: "500m"
+    limits:
+      memory: "4Gi"
+      cpu: "1000m"
+  service:
+    port: 8101
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilization: 70
+    targetMemoryUtilization: 80
+
+documentRetrieval:
+  enabled: true
+  image:
+    repository: rag-system/document-retrieval
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicaCount: 3
+  resources:
+    requests:
+      memory: "2Gi"
+      cpu: "500m"
+    limits:
+      memory: "4Gi"
+      cpu: "1000m"
+  service:
+    port: 8102
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilization: 70
+    targetMemoryUtilization: 80
+
+documentRanking:
+  enabled: true
+  image:
+    repository: rag-system/document-ranking
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicaCount: 2
+  resources:
+    requests:
+      memory: "2Gi"
+      cpu: "1000m"
+    limits:
+      memory: "4Gi"
+      cpu: "2000m"
+  service:
+    port: 8103
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 8
+    targetCPUUtilization: 70
+    targetMemoryUtilization: 80
+
+latexParser:
+  enabled: true
+  image:
+    repository: rag-system/latex-parser
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicaCount: 2
+  resources:
+    requests:
+      memory: "1Gi"
+      cpu: "500m"
+    limits:
+      memory: "2Gi"
+      cpu: "1000m"
+  service:
+    port: 8104
+  autoscaling:
+    enabled: false
+
+llmGeneration:
+  enabled: true
+  image:
+    repository: rag-system/llm-generation
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicaCount: 2
+  resources:
+    requests:
+      memory: "1Gi"
+      cpu: "500m"
+    limits:
+      memory: "2Gi"
+      cpu: "1000m"
+  service:
+    port: 8105
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 8
+    targetCPUUtilization: 70
+    targetMemoryUtilization: 80
+
+responseFormatter:
+  enabled: true
+  image:
+    repository: rag-system/response-formatter
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicaCount: 2
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+  service:
+    port: 8106
+  autoscaling:
+    enabled: false
+
+# API Gateway
+apiGateway:
+  enabled: true
+  image:
+    repository: rag-system/api-gateway
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicaCount: 3
+  resources:
+    requests:
+      memory: "1Gi"
+      cpu: "500m"
+    limits:
+      memory: "2Gi"
+      cpu: "1000m"
+  service:
+    type: LoadBalancer  # LoadBalancer, ClusterIP, NodePort
+    port: 80
+    targetPort: 8000
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilization: 70
+    targetMemoryUtilization: 80
+
+# Ingress
+ingress:
+  enabled: false
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/limit-rps: "100"
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+  hosts:
+    - host: api.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: api-gateway-tls
+      hosts:
+        - api.example.com
+
+# Monitoring (if you have Prometheus Operator)
+monitoring:
+  enabled: false
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    scrapeTimeout: 10s
+
+# Pod Security
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: false
+
+# Node affinity and tolerations
+nodeSelector: {}
+tolerations: []
+affinity: {}

@@ -1,0 +1,88 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llm-generation
+  namespace: rag-system
+  labels:
+    app: llm-generation
+    tier: application
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: llm-generation
+  template:
+    metadata:
+      labels:
+        app: llm-generation
+        tier: application
+    spec:
+      containers:
+      - name: llm-generation
+        image: rag-system/llm-generation:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8105
+          name: http
+        env:
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: rag-app-config
+              key: LOG_LEVEL
+        - name: LLM_PROVIDER
+          valueFrom:
+            configMapKeyRef:
+              name: rag-app-config
+              key: LLM_PROVIDER
+        - name: DEFAULT_MODEL
+          valueFrom:
+            configMapKeyRef:
+              name: rag-app-config
+              key: DEFAULT_MODEL
+        - name: LLM_MAX_TOKENS
+          valueFrom:
+            configMapKeyRef:
+              name: rag-app-config
+              key: LLM_MAX_TOKENS
+        - name: LLM_TEMPERATURE
+          valueFrom:
+            configMapKeyRef:
+              name: rag-app-config
+              key: LLM_TEMPERATURE
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: rag-app-secrets
+              key: openai-api-key
+        - name: REDIS_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: rag-app-config
+              key: REDIS_HOST
+        - name: REDIS_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: rag-app-config
+              key: REDIS_PORT
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /api/v1/health
+            port: 8105
+          initialDelaySeconds: 30
+          periodSeconds: 15
+          timeoutSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /api/v1/health
+            port: 8105
+          initialDelaySeconds: 10
+          periodSeconds: 10

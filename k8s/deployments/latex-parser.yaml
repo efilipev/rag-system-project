@@ -1,0 +1,62 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: latex-parser
+  namespace: rag-system
+  labels:
+    app: latex-parser
+    tier: application
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: latex-parser
+  template:
+    metadata:
+      labels:
+        app: latex-parser
+        tier: application
+    spec:
+      containers:
+      - name: latex-parser
+        image: rag-system/latex-parser:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8104
+          name: http
+        env:
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: rag-app-config
+              key: LOG_LEVEL
+        - name: REDIS_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: rag-app-config
+              key: REDIS_HOST
+        - name: REDIS_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: rag-app-config
+              key: REDIS_PORT
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /api/v1/health
+            port: 8104
+          initialDelaySeconds: 30
+          periodSeconds: 15
+        readinessProbe:
+          httpGet:
+            path: /api/v1/health
+            port: 8104
+          initialDelaySeconds: 10
+          periodSeconds: 10

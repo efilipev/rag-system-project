@@ -1,0 +1,24 @@
+{{ define "slack.title" }}
+[{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] {{ .GroupLabels.alertname }}
+{{ end }}
+
+{{ define "slack.text" }}
+{{ range .Alerts }}
+*Alert:* {{ .Annotations.summary }}
+*Description:* {{ .Annotations.description }}
+*Severity:* {{ .Labels.severity }}
+*Component:* {{ .Labels.component }}
+{{ if .Labels.service }}*Service:* {{ .Labels.service }}{{ end }}
+{{ if .Labels.pod }}*Pod:* {{ .Labels.pod }}{{ end }}
+*Started:* {{ .StartsAt.Format "2006-01-02 15:04:05 UTC" }}
+{{ if .EndsAt }}*Ended:* {{ .EndsAt.Format "2006-01-02 15:04:05 UTC" }}{{ end }}
+---
+{{ end }}
+{{ end }}
+
+{{ define "pagerduty.instances" }}
+{{ range . }}
+- {{ .Labels.alertname }} on {{ .Labels.instance }}
+  Summary: {{ .Annotations.summary }}
+{{ end }}
+{{ end }}

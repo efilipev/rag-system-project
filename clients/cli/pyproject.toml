@@ -1,0 +1,15 @@
+[tool.poetry]
+name = "rag-cli"
+version = "1.0.0"
+description = "CLI client for RAG System"
+authors = ["RAG System"]
+package-mode = false
+
+[tool.poetry.dependencies]
+python = "^3.11"
+httpx = "^0.25.0"
+rich = "^13.7.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

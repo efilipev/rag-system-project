@@ -1,0 +1,518 @@
+services:
+  # Frontend - React UI on port 3005
+  frontend:
+    build:
+      context: ./clients/frontend
+      dockerfile: Dockerfile
+    container_name: rag-frontend
+    ports:
+      - "3005:3005"
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    depends_on:
+      rag-api:
+        condition: service_healthy
+    networks:
+      - rag-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3005"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # Python API Gateway - Main entry point for local development (Option B)
+  # Orchestrates RAG pipeline with parallel execution, query analysis, ranking
+  rag-api:
+    build:
+      context: .
+      dockerfile: services/api-gateway/Dockerfile
+    container_name: rag-python-api
+    environment:
+      - SERVICE_NAME=api-gateway
+      - LOG_LEVEL=INFO
+      - QUERY_ANALYSIS_URL=http://query-analysis:8101
+      - DOCUMENT_RETRIEVAL_URL=http://document-retrieval:8000
+      - DOCUMENT_RANKING_URL=http://document-ranking:8000
+      - LATEX_PARSER_URL=http://latex-parser:8000
+      - LLM_GENERATION_URL=http://llm-generation:8000
+      - RESPONSE_FORMATTER_URL=http://response-formatter:8000
+      - REDIS_URL=redis://redis:6379
+      - ENABLE_AUTHENTICATION=false
+      - ENABLE_RATE_LIMITING=false
+      - CORS_ALLOWED_ORIGINS=["*"]
+    ports:
+      - "8000:8000"  # Main API port
+    depends_on:
+      redis:
+        condition: service_healthy
+      document-retrieval:
+        condition: service_healthy
+      llm-generation:
+        condition: service_healthy
+    networks:
+      - rag-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # Kong API Gateway - For production with advanced routing (Option A)
+  # Disabled by default, use profiles to enable
+  kong-gateway:
+    image: kong:3.9
+    container_name: rag-kong-gateway
+    profiles:
+      - kong  # Only starts with: docker-compose --profile kong up
+    environment:
+      KONG_DATABASE: postgres
+      KONG_PG_HOST: postgres
+      KONG_PG_DATABASE: kong
+      KONG_PG_USER: kong
+      KONG_PG_PASSWORD: kong
+      KONG_ADMIN_LISTEN: 0.0.0.0:8001
+      KONG_PROXY_LISTEN: 0.0.0.0:8080
+    ports:
+      - "8080:8080"  # Kong proxy (when enabled)
+      - "8001:8001"  # Kong admin
+    depends_on:
+      - postgres
+    networks:
+      - rag-network
+    healthcheck:
+      test: ["CMD", "kong", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # PostgreSQL Database
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: rag-postgres
+    environment:
+      POSTGRES_USER: raguser
+      POSTGRES_PASSWORD: ragpassword
+      POSTGRES_DB: ragdb
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./infrastructure/scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    networks:
+      - rag-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U raguser -d ragdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Qdrant Vector Database
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: rag-qdrant
+    ports:
+      - "6335:6333"
+      - "6336:6334"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    networks:
+      - rag-network
+    # Healthcheck disabled - curl not available in Qdrant image
+    # healthcheck:
+    #   test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
+    #   interval: 10s
+    #   timeout: 5s
+    #   retries: 5
+
+  # Chroma Vector Database
+  chroma:
+    image: chromadb/chroma:0.6.3
+    container_name: rag-chroma
+    ports:
+      - "8002:8000"
+    volumes:
+      - chroma-data:/chroma/chroma
+    environment:
+      - IS_PERSISTENT=TRUE
+      - ANONYMIZED_TELEMETRY=FALSE
+    networks:
+      - rag-network
+    # Healthcheck disabled - endpoint returns 410 error in latest version
+    # healthcheck:
+    #   test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+    #   interval: 10s
+    #   timeout: 5s
+    #   retries: 5
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: rag-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - rag-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # RabbitMQ Message Queue
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: rag-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: raguser
+      RABBITMQ_DEFAULT_PASS: ragpassword
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    networks:
+      - rag-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # MinIO Object Storage
+  minio:
+    image: minio/minio:latest
+    container_name: rag-minio
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin123
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    command: server /data --console-address ":9001"
+    networks:
+      - rag-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Ollama - Local LLM
+  ollama:
+    image: ollama/ollama:latest
+    container_name: rag-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    networks:
+      - rag-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    # GPU support (uncomment for Linux with NVIDIA GPU)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  # Query Analysis Service
+  query-analysis:
+    build:
+      context: .
+      dockerfile: services/query-analysis/Dockerfile
+    container_name: rag-query-analysis
+    environment:
+      - SERVICE_NAME=query-analysis
+      - RABBITMQ_URL=amqp://raguser:ragpassword@rabbitmq:5672/
+      - REDIS_URL=redis://redis:6379
+      - LOG_LEVEL=INFO
+    ports:
+      - "8101:8101"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - rag-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8101/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # Document Retrieval Service
+  document-retrieval:
+    build:
+      context: .
+      dockerfile: services/document-retrieval/Dockerfile
+    container_name: rag-document-retrieval
+    environment:
+      - SERVICE_NAME=document-retrieval
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      - CHROMA_HOST=chroma
+      - CHROMA_PORT=8000
+      - POSTGRES_URL=postgresql://raguser:ragpassword@postgres:5432/ragdb
+      - RABBITMQ_URL=amqp://raguser:ragpassword@rabbitmq:5672/
+      - REDIS_URL=redis://redis:6379
+      - LOG_LEVEL=INFO
+    ports:
+      - "8102:8000"
+    depends_on:
+      chroma:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    networks:
+      - rag-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # Document Ranking Service
+  document-ranking:
+    build:
+      context: .
+      dockerfile: services/document-ranking/Dockerfile
+    container_name: rag-document-ranking
+    environment:
+      - SERVICE_NAME=document-ranking
+      - RABBITMQ_URL=amqp://raguser:ragpassword@rabbitmq:5672/
+      - REDIS_URL=redis://redis:6379
+      - MODEL_NAME=cross-encoder/ms-marco-MiniLM-L-12-v2
+      - LOG_LEVEL=INFO
+    ports:
+      - "8103:8000"
+    depends_on:
+      - rabbitmq
+      - redis
+    networks:
+      - rag-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # LaTeX Parser Service
+  latex-parser:
+    build:
+      context: .
+      dockerfile: services/latex-parser/Dockerfile
+    container_name: rag-latex-parser
+    environment:
+      - SERVICE_NAME=latex-parser
+      - RABBITMQ_URL=amqp://raguser:ragpassword@rabbitmq:5672/
+      - REDIS_URL=redis://redis:6379
+      - LOG_LEVEL=INFO
+    ports:
+      - "8104:8000"
+    depends_on:
+      - rabbitmq
+      - redis
+    networks:
+      - rag-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # LLM Generation Service
+  llm-generation:
+    build:
+      context: .
+      dockerfile: services/llm-generation/Dockerfile
+    container_name: rag-llm-generation
+    environment:
+      - SERVICE_NAME=llm-generation
+      - RABBITMQ_URL=amqp://raguser:ragpassword@rabbitmq:5672/
+      - REDIS_URL=redis://redis:6379
+      - LLM_PROVIDER=ollama
+      - LOCAL_LLM_BASE_URL=http://ollama:11434
+      - DEFAULT_MODEL=llama3.2:1b
+      - LLM_TEMPERATURE=0.7
+      - LLM_MAX_TOKENS=2000
+      - LOG_LEVEL=INFO
+    ports:
+      - "8105:8000"
+    depends_on:
+      - rabbitmq
+      - redis
+      - ollama
+    networks:
+      - rag-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # Response Formatter Service
+  response-formatter:
+    build:
+      context: .
+      dockerfile: services/response-formatter/Dockerfile
+    container_name: rag-response-formatter
+    environment:
+      - SERVICE_NAME=response-formatter
+      - RABBITMQ_URL=amqp://raguser:ragpassword@rabbitmq:5672/
+      - REDIS_URL=redis://redis:6379
+      - LOG_LEVEL=INFO
+    ports:
+      - "8106:8000"
+    depends_on:
+      - rabbitmq
+      - redis
+    networks:
+      - rag-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # Prometheus
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: rag-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infrastructure/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./infrastructure/monitoring/prometheus-alerts:/etc/prometheus/alerts
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+    depends_on:
+      - alertmanager
+    networks:
+      - rag-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # Alertmanager
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: rag-alertmanager
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./infrastructure/monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+      - ./infrastructure/monitoring/alertmanager-templates:/etc/alertmanager/templates
+      - alertmanager-data:/alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+      - '--web.external-url=http://localhost:9093'
+    environment:
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL:-}
+      - PAGERDUTY_SERVICE_KEY=${PAGERDUTY_SERVICE_KEY:-}
+      - PAGERDUTY_SECURITY_KEY=${PAGERDUTY_SECURITY_KEY:-}
+    networks:
+      - rag-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9093/-/healthy"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # Loki - Log Aggregation
+  loki:
+    image: grafana/loki:2.9.0
+    container_name: rag-loki
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./infrastructure/monitoring/loki/loki-config.yaml:/etc/loki/local-config.yaml
+      - loki-data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - rag-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3100/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # Promtail - Log Collector
+  promtail:
+    image: grafana/promtail:2.9.0
+    container_name: rag-promtail
+    volumes:
+      - ./infrastructure/monitoring/promtail/promtail-config.yaml:/etc/promtail/config.yaml
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/log:/var/log:ro
+    command: -config.file=/etc/promtail/config.yaml
+    depends_on:
+      - loki
+    networks:
+      - rag-network
+
+  # Grafana
+  grafana:
+    image: grafana/grafana:latest
+    container_name: rag-grafana
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_PLUGINS_PREINSTALL=grafana-clock-panel
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./infrastructure/monitoring/grafana-dashboards:/etc/grafana/provisioning/dashboards
+      - ./infrastructure/monitoring/grafana-datasources:/etc/grafana/provisioning/datasources
+    depends_on:
+      - prometheus
+      - loki
+    networks:
+      - rag-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  postgres-data:
+  qdrant-data:
+  chroma-data:
+  redis-data:
+  rabbitmq-data:
+  minio-data:
+  ollama-data:
+  prometheus-data:
+  alertmanager-data:
+  loki-data:
+  grafana-data:
+
+networks:
+  rag-network:
+    driver: bridge

@@ -1,0 +1,112 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway
+  namespace: rag-system
+  labels:
+    app: api-gateway
+    tier: gateway
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: api-gateway
+  template:
+    metadata:
+      labels:
+        app: api-gateway
+        tier: gateway
+    spec:
+      containers:
+      - name: api-gateway
+        image: rag-system/api-gateway:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8000
+          name: http
+        env:
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: rag-app-config
+              key: LOG_LEVEL
+        - name: QUERY_ANALYSIS_URL
+          valueFrom:
+            configMapKeyRef:
+              name: rag-app-config
+              key: QUERY_ANALYSIS_URL
+        - name: DOCUMENT_RETRIEVAL_URL
+          valueFrom:
+            configMapKeyRef:
+              name: rag-app-config
+              key: DOCUMENT_RETRIEVAL_URL
+        - name: DOCUMENT_RANKING_URL
+          valueFrom:
+            configMapKeyRef:
+              name: rag-app-config
+              key: DOCUMENT_RANKING_URL
+        - name: LATEX_PARSER_URL
+          valueFrom:
+            configMapKeyRef:
+              name: rag-app-config
+              key: LATEX_PARSER_URL
+        - name: LLM_GENERATION_URL
+          valueFrom:
+            configMapKeyRef:
+              name: rag-app-config
+              key: LLM_GENERATION_URL
+        - name: RESPONSE_FORMATTER_URL
+          valueFrom:
+            configMapKeyRef:
+              name: rag-app-config
+              key: RESPONSE_FORMATTER_URL
+        - name: ENABLE_AUTHENTICATION
+          valueFrom:
+            configMapKeyRef:
+              name: rag-app-config
+              key: ENABLE_AUTHENTICATION
+        - name: ENABLE_RATE_LIMITING
+          valueFrom:
+            configMapKeyRef:
+              name: rag-app-config
+              key: ENABLE_RATE_LIMITING
+        - name: JWT_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: rag-app-secrets
+              key: jwt-secret-key
+        - name: REDIS_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: rag-app-config
+              key: REDIS_HOST
+        - name: REDIS_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: rag-app-config
+              key: REDIS_PORT
+        - name: CORS_ALLOWED_ORIGINS
+          valueFrom:
+            configMapKeyRef:
+              name: rag-app-config
+              key: CORS_ALLOWED_ORIGINS
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /api/v1/health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 15
+        readinessProbe:
+          httpGet:
+            path: /api/v1/health
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 10

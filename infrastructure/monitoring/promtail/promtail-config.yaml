@@ -1,0 +1,190 @@
+# Promtail configuration for RAG System
+# Collects logs from Docker containers and sends to Loki
+
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+    tenant_id: rag-system
+    batchwait: 1s
+    batchsize: 1048576
+    timeout: 10s
+    backoff_config:
+      min_period: 500ms
+      max_period: 5m
+      max_retries: 10
+
+scrape_configs:
+  # Docker container logs
+  - job_name: docker-containers
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+        filters:
+          - name: label
+            values: ["com.docker.compose.project=rag-system-project"]
+    relabel_configs:
+      # Extract container name
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/(.*)'
+        target_label: 'container'
+      # Extract service name from container name
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/rag-(.*)'
+        target_label: 'service'
+      # Add compose project label
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_project']
+        target_label: 'project'
+      # Add compose service label
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_service']
+        target_label: 'compose_service'
+      # Add container ID
+      - source_labels: ['__meta_docker_container_id']
+        target_label: 'container_id'
+    pipeline_stages:
+      # Parse JSON logs from FastAPI services
+      - json:
+          expressions:
+            level: level
+            message: message
+            timestamp: timestamp
+            service: service
+            correlation_id: correlation_id
+            user_id: user_id
+            request_id: request_id
+            duration_ms: duration_ms
+            status_code: status_code
+            path: path
+            method: method
+      # Set log level label
+      - labels:
+          level:
+          correlation_id:
+          user_id:
+      # Normalize log levels
+      - template:
+          source: level
+          template: '{{ ToLower .Value }}'
+      # Extract timestamp
+      - timestamp:
+          source: timestamp
+          format: RFC3339Nano
+          fallback_formats:
+            - RFC3339
+            - "2006-01-02T15:04:05.000Z"
+            - "2006-01-02 15:04:05"
+      # Add static labels
+      - static_labels:
+          environment: production
+          cluster: rag-system
+
+  # System logs (if running on host)
+  - job_name: system
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: system
+          __path__: /var/log/*.log
+
+  # Application-specific log parsing
+  - job_name: rag-services
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+    relabel_configs:
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/rag-(query-analysis|document-retrieval|document-ranking|latex-parser|llm-generation|response-formatter)'
+        action: keep
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/rag-(.*)'
+        target_label: 'service'
+    pipeline_stages:
+      # Parse structured JSON logs
+      - json:
+          expressions:
+            level: level
+            msg: message
+            ts: timestamp
+            caller: caller
+            trace_id: trace_id
+            span_id: span_id
+            error: error
+            stack_trace: stack_trace
+      # Extract labels
+      - labels:
+          level:
+          trace_id:
+          span_id:
+      # Handle error logs specially
+      - match:
+          selector: '{level="error"}'
+          stages:
+            - json:
+                expressions:
+                  error_type: error_type
+                  error_message: error_message
+            - labels:
+                error_type:
+      # Metrics extraction from logs
+      - metrics:
+          log_lines_total:
+            type: Counter
+            description: "Total number of log lines"
+            prefix: promtail_custom_
+            source: level
+            config:
+              action: inc
+          error_logs_total:
+            type: Counter
+            description: "Total number of error logs"
+            prefix: promtail_custom_
+            source: level
+            config:
+              value: error
+              action: inc
+
+  # Database logs
+  - job_name: databases
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+    relabel_configs:
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/rag-(postgres|redis|qdrant|rabbitmq)'
+        action: keep
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/rag-(.*)'
+        target_label: 'service'
+      - replacement: 'database'
+        target_label: 'component'
+    pipeline_stages:
+      # PostgreSQL log parsing
+      - match:
+          selector: '{service="postgres"}'
+          stages:
+            - regex:
+                expression: '^(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+ UTC) \[(?P<pid>\d+)\] (?P<level>\w+):  (?P<message>.*)$'
+            - labels:
+                level:
+                pid:
+      # Redis log parsing
+      - match:
+          selector: '{service="redis"}'
+          stages:
+            - regex:
+                expression: '^(?P<pid>\d+):(?P<role>\w) (?P<timestamp>\d+ \w+ \d{4} \d{2}:\d{2}:\d{2}\.\d+) (?P<level>[\*#\-\.]) (?P<message>.*)$'
+            - labels:
+                role:
+
+# Limits to prevent OOM
+limits_config:
+  readline_rate_enabled: true
+  readline_rate: 1000
+  readline_burst: 5000
+  readline_rate_drop: false

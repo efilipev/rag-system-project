@@ -1,0 +1,304 @@
+groups:
+  - name: rag_system_alerts
+    interval: 30s
+    rules:
+      # High Error Rate Alerts
+      - alert: HighErrorRate
+        expr: |
+          (
+            sum(rate(http_requests_total{status=~"5.."}[5m])) by (service)
+            /
+            sum(rate(http_requests_total[5m])) by (service)
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          component: "{{ $labels.service }}"
+        annotations:
+          summary: "High error rate detected in {{ $labels.service }}"
+          description: "Error rate is {{ $value | humanizePercentage }} (threshold: 5%)"
+
+      # High Latency Alerts
+      - alert: HighLatencyP95
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(http_request_duration_seconds_bucket[5m])) by (service, le)
+          ) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          component: "{{ $labels.service }}"
+        annotations:
+          summary: "High p95 latency in {{ $labels.service }}"
+          description: "P95 latency is {{ $value }}s (threshold: 500ms)"
+
+      - alert: HighLatencyP99
+        expr: |
+          histogram_quantile(0.99,
+            sum(rate(http_request_duration_seconds_bucket[5m])) by (service, le)
+          ) > 1.0
+        for: 5m
+        labels:
+          severity: critical
+          component: "{{ $labels.service }}"
+        annotations:
+          summary: "High p99 latency in {{ $labels.service }}"
+          description: "P99 latency is {{ $value }}s (threshold: 1s)"
+
+      # Pod Availability
+      - alert: PodDown
+        expr: kube_pod_status_phase{phase="Running",namespace="rag-system"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: kubernetes
+        annotations:
+          summary: "Pod {{ $labels.pod }} is down"
+          description: "Pod {{ $labels.pod }} in namespace {{ $labels.namespace }} is not running"
+
+      - alert: PodCrashLooping
+        expr: rate(kube_pod_container_status_restarts_total{namespace="rag-system"}[15m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          component: kubernetes
+        annotations:
+          summary: "Pod {{ $labels.pod }} is crash looping"
+          description: "Pod {{ $labels.pod }} has restarted {{ $value }} times in the last 15 minutes"
+
+      # Resource Utilization
+      - alert: HighMemoryUsage
+        expr: |
+          (
+            container_memory_working_set_bytes{namespace="rag-system"}
+            /
+            container_spec_memory_limit_bytes{namespace="rag-system"}
+          ) > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          component: "{{ $labels.pod }}"
+        annotations:
+          summary: "High memory usage in {{ $labels.pod }}"
+          description: "Memory usage is {{ $value | humanizePercentage }} (threshold: 90%)"
+
+      - alert: HighCPUUsage
+        expr: |
+          rate(container_cpu_usage_seconds_total{namespace="rag-system"}[5m]) > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          component: "{{ $labels.pod }}"
+        annotations:
+          summary: "High CPU usage in {{ $labels.pod }}"
+          description: "CPU usage is {{ $value | humanizePercentage }} (threshold: 80%)"
+
+      # Database Alerts
+      - alert: PostgreSQLDown
+        expr: pg_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: postgres
+        annotations:
+          summary: "PostgreSQL is down"
+          description: "PostgreSQL database is not responding"
+
+      - alert: PostgreSQLHighConnections
+        expr: |
+          (
+            sum(pg_stat_database_numbackends)
+            /
+            pg_settings_max_connections
+          ) > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          component: postgres
+        annotations:
+          summary: "PostgreSQL connection pool near limit"
+          description: "Connection usage is {{ $value | humanizePercentage }} (threshold: 80%)"
+
+      - alert: PostgreSQLSlowQueries
+        expr: rate(pg_stat_statements_mean_exec_time[5m]) > 1000
+        for: 5m
+        labels:
+          severity: warning
+          component: postgres
+        annotations:
+          summary: "PostgreSQL slow queries detected"
+          description: "Average query time is {{ $value }}ms"
+
+      # Redis Alerts
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: redis
+        annotations:
+          summary: "Redis is down"
+          description: "Redis cache is not responding"
+
+      - alert: RedisHighMemoryUsage
+        expr: |
+          (
+            redis_memory_used_bytes
+            /
+            redis_memory_max_bytes
+          ) > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          component: redis
+        annotations:
+          summary: "Redis high memory usage"
+          description: "Memory usage is {{ $value | humanizePercentage }} (threshold: 90%)"
+
+      # RabbitMQ Alerts
+      - alert: RabbitMQDown
+        expr: rabbitmq_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: rabbitmq
+        annotations:
+          summary: "RabbitMQ is down"
+          description: "RabbitMQ message queue is not responding"
+
+      - alert: RabbitMQHighQueueLength
+        expr: rabbitmq_queue_messages > 10000
+        for: 10m
+        labels:
+          severity: warning
+          component: rabbitmq
+        annotations:
+          summary: "RabbitMQ queue {{ $labels.queue }} has high message count"
+          description: "Queue has {{ $value }} messages (threshold: 10000)"
+
+      # Vector Database Alerts
+      - alert: QdrantDown
+        expr: up{job="qdrant"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: qdrant
+        annotations:
+          summary: "Qdrant vector database is down"
+          description: "Qdrant is not responding to health checks"
+
+      # LLM Service Alerts
+      - alert: LLMServiceHighTokenUsage
+        expr: rate(llm_tokens_used_total[1h]) > 100000
+        for: 30m
+        labels:
+          severity: warning
+          component: llm-generation
+        annotations:
+          summary: "High LLM token usage detected"
+          description: "Token usage rate is {{ $value }}/hour - check for unusual activity"
+
+      - alert: LLMServiceHighCost
+        expr: sum(rate(llm_cost_usd_total[1h])) > 10
+        for: 30m
+        labels:
+          severity: warning
+          component: llm-generation
+        annotations:
+          summary: "High LLM cost detected"
+          description: "Cost is ${{ $value }}/hour - exceeding budget threshold"
+
+      # API Gateway Alerts
+      - alert: APIGatewayHighRequestRate
+        expr: rate(http_requests_total{service="api-gateway"}[1m]) > 1000
+        for: 5m
+        labels:
+          severity: info
+          component: api-gateway
+        annotations:
+          summary: "API Gateway experiencing high request rate"
+          description: "Request rate is {{ $value }}/s (threshold: 1000/s)"
+
+      - alert: RateLimitExceeded
+        expr: rate(rate_limit_exceeded_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+          component: api-gateway
+        annotations:
+          summary: "High rate of rate limit violations"
+          description: "{{ $value }} requests/s are being rate limited"
+
+      # Authentication Alerts
+      - alert: HighAuthenticationFailureRate
+        expr: |
+          (
+            rate(auth_failures_total[5m])
+            /
+            rate(auth_attempts_total[5m])
+          ) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          component: authentication
+        annotations:
+          summary: "High authentication failure rate"
+          description: "Failure rate is {{ $value | humanizePercentage }} (threshold: 10%)"
+
+      # Storage Alerts
+      - alert: PersistentVolumeNearFull
+        expr: |
+          (
+            kubelet_volume_stats_used_bytes{namespace="rag-system"}
+            /
+            kubelet_volume_stats_capacity_bytes{namespace="rag-system"}
+          ) > 0.85
+        for: 10m
+        labels:
+          severity: warning
+          component: storage
+        annotations:
+          summary: "PersistentVolume {{ $labels.persistentvolumeclaim }} is nearly full"
+          description: "Usage is {{ $value | humanizePercentage }} (threshold: 85%)"
+
+      # Service Availability (SLA)
+      - alert: ServiceAvailabilityBreach
+        expr: |
+          (
+            sum(rate(http_requests_total{status!~"5.."}[5m])) by (service)
+            /
+            sum(rate(http_requests_total[5m])) by (service)
+          ) < 0.999
+        for: 15m
+        labels:
+          severity: critical
+          component: "{{ $labels.service }}"
+        annotations:
+          summary: "Service {{ $labels.service }} availability below SLA"
+          description: "Availability is {{ $value | humanizePercentage }} (SLA: 99.9%)"
+
+      # Query Performance
+      - alert: SlowQueryRetrieval
+        expr: histogram_quantile(0.95, rate(query_retrieval_duration_seconds_bucket[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          component: document-retrieval
+        annotations:
+          summary: "Slow document retrieval detected"
+          description: "P95 retrieval time is {{ $value }}s (threshold: 50ms)"
+
+      - alert: LowQuerySuccessRate
+        expr: |
+          (
+            rate(query_success_total[5m])
+            /
+            rate(query_total[5m])
+          ) < 0.95
+        for: 5m
+        labels:
+          severity: warning
+          component: query-pipeline
+        annotations:
+          summary: "Low query success rate"
+          description: "Success rate is {{ $value | humanizePercentage }} (threshold: 95%)"

@@ -1,0 +1,92 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: document-retrieval
+  namespace: rag-system
+  labels:
+    app: document-retrieval
+    tier: application
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: document-retrieval
+  template:
+    metadata:
+      labels:
+        app: document-retrieval
+        tier: application
+    spec:
+      containers:
+      - name: document-retrieval
+        image: rag-system/document-retrieval:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8102
+          name: http
+        env:
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: rag-app-config
+              key: LOG_LEVEL
+        - name: EMBEDDING_MODEL
+          valueFrom:
+            configMapKeyRef:
+              name: rag-app-config
+              key: EMBEDDING_MODEL
+        - name: POSTGRES_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: rag-app-config
+              key: POSTGRES_HOST
+        - name: POSTGRES_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: rag-app-config
+              key: POSTGRES_PORT
+        - name: POSTGRES_DB
+          valueFrom:
+            configMapKeyRef:
+              name: rag-app-config
+              key: POSTGRES_DB
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: rag-app-secrets
+              key: postgres-user
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: rag-app-secrets
+              key: postgres-password
+        - name: QDRANT_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: rag-app-config
+              key: QDRANT_HOST
+        - name: QDRANT_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: rag-app-config
+              key: QDRANT_PORT
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "500m"
+          limits:
+            memory: "4Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8102
+          initialDelaySeconds: 60
+          periodSeconds: 15
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8102
+          initialDelaySeconds: 30
+          periodSeconds: 10

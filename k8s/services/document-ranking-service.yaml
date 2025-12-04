@@ -1,0 +1,17 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: document-ranking-service
+  namespace: rag-system
+  labels:
+    app: document-ranking
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8103
+    targetPort: 8103
+    protocol: TCP
+    name: http
+  selector:
+    app: document-ranking

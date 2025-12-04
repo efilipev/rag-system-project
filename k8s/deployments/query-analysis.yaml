@@ -1,0 +1,89 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: query-analysis
+  namespace: rag-system
+  labels:
+    app: query-analysis
+    tier: application
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: query-analysis
+  template:
+    metadata:
+      labels:
+        app: query-analysis
+        tier: application
+    spec:
+      containers:
+      - name: query-analysis
+        image: rag-system/query-analysis:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8101
+          name: http
+        env:
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: rag-app-config
+              key: LOG_LEVEL
+        - name: EMBEDDING_MODEL
+          valueFrom:
+            configMapKeyRef:
+              name: rag-app-config
+              key: EMBEDDING_MODEL
+        - name: RABBITMQ_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: rag-app-config
+              key: RABBITMQ_HOST
+        - name: RABBITMQ_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: rag-app-config
+              key: RABBITMQ_PORT
+        - name: RABBITMQ_USER
+          valueFrom:
+            secretKeyRef:
+              name: rag-app-secrets
+              key: rabbitmq-user
+        - name: RABBITMQ_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: rag-app-secrets
+              key: rabbitmq-password
+        - name: REDIS_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: rag-app-config
+              key: REDIS_HOST
+        - name: REDIS_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: rag-app-config
+              key: REDIS_PORT
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "500m"
+          limits:
+            memory: "4Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8101
+          initialDelaySeconds: 60
+          periodSeconds: 15
+          timeoutSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8101
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 3

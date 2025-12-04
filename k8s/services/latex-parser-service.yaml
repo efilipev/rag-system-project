@@ -1,0 +1,17 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: latex-parser-service
+  namespace: rag-system
+  labels:
+    app: latex-parser
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8104
+    targetPort: 8104
+    protocol: TCP
+    name: http
+  selector:
+    app: latex-parser
