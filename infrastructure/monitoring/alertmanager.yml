@@ -1,26 +1,9 @@
-# Alertmanager configuration for RAG System
+# Alertmanager configuration for RAG System (Development)
 # Handles alert routing, grouping, and notification delivery
 
 global:
-  # Global SMTP configuration for email alerts
-  smtp_smarthost: 'smtp.gmail.com:587'
-  smtp_from: 'alerts@rag-system.local'
-  smtp_auth_username: ''  # Set via environment variable
-  smtp_auth_password: ''  # Set via environment variable
-  smtp_require_tls: true
-
-  # Slack configuration
-  slack_api_url: ''  # Set via environment variable SLACK_WEBHOOK_URL
-
-  # PagerDuty configuration
-  pagerduty_url: 'https://events.pagerduty.com/v2/enqueue'
-
   # Default resolve timeout
   resolve_timeout: 5m
-
-# Templates for notifications
-templates:
-  - '/etc/alertmanager/templates/*.tmpl'
 
 # Route tree for alert routing
 route:
@@ -47,7 +30,6 @@ route:
       receiver: 'critical-alerts'
       group_wait: 10s
       repeat_interval: 1h
-      continue: true
 
     # Warning alerts - standard notification
     - match:
@@ -55,28 +37,6 @@ route:
       receiver: 'warning-alerts'
       group_wait: 1m
       repeat_interval: 4h
-      continue: true
-
-    # Database alerts - dedicated channel
-    - match_re:
-        component: '(postgres|redis|qdrant|rabbitmq)'
-      receiver: 'database-alerts'
-      group_wait: 30s
-      repeat_interval: 2h
-
-    # Security alerts - immediate escalation
-    - match_re:
-        alertname: '(HighAuthenticationFailureRate|RateLimitExceeded|ServiceAvailabilityBreach)'
-      receiver: 'security-alerts'
-      group_wait: 10s
-      repeat_interval: 30m
-
-    # Cost alerts - notify ops team
-    - match_re:
-        alertname: '(LLMServiceHighCost|LLMServiceHighTokenUsage)'
-      receiver: 'cost-alerts'
-      group_wait: 5m
-      repeat_interval: 1h
 
 # Inhibition rules - suppress alerts when related alerts are firing
 inhibit_rules:
@@ -87,114 +47,13 @@ inhibit_rules:
       severity: 'warning'
     equal: ['alertname', 'service']
 
-  # If pod is down, suppress other alerts for that pod
-  - source_match:
-      alertname: 'PodDown'
-    target_match_re:
-      alertname: '(HighMemoryUsage|HighCPUUsage|HighLatency.*)'
-    equal: ['pod']
-
-  # If database is down, suppress connection alerts
-  - source_match:
-      alertname: 'PostgreSQLDown'
-    target_match_re:
-      alertname: '(PostgreSQLHighConnections|PostgreSQLSlowQueries)'
-
-  - source_match:
-      alertname: 'RedisDown'
-    target_match_re:
-      alertname: 'RedisHighMemoryUsage'
-
-# Receiver configurations
+# Receiver configurations (development - no external notifications)
 receivers:
-  # Default receiver - logs only (fallback)
+  # Default receiver - logs only
   - name: 'default-receiver'
-    webhook_configs:
-      - url: 'http://localhost:9094/webhook'
-        send_resolved: true
 
-  # Critical alerts - Slack + PagerDuty
+  # Critical alerts - logs only in development
   - name: 'critical-alerts'
-    slack_configs:
-      - api_url: '${SLACK_WEBHOOK_URL}'
-        channel: '#rag-alerts-critical'
-        username: 'RAG AlertManager'
-        icon_emoji: ':rotating_light:'
-        title: '{{ template "slack.title" . }}'
-        text: '{{ template "slack.text" . }}'
-        send_resolved: true
-        color: '{{ if eq .Status "firing" }}danger{{ else }}good{{ end }}'
-        actions:
-          - type: button
-            text: 'View in Grafana'
-            url: 'http://localhost:3000/d/rag-overview'
-          - type: button
-            text: 'Runbook'
-            url: 'https://docs.rag-system.local/runbooks/{{ .GroupLabels.alertname }}'
-    pagerduty_configs:
-      - service_key: '${PAGERDUTY_SERVICE_KEY}'
-        severity: 'critical'
-        description: '{{ .GroupLabels.alertname }}: {{ .CommonAnnotations.summary }}'
-        details:
-          firing: '{{ template "pagerduty.instances" .Alerts.Firing }}'
-          resolved: '{{ template "pagerduty.instances" .Alerts.Resolved }}'
-          num_firing: '{{ .Alerts.Firing | len }}'
-          num_resolved: '{{ .Alerts.Resolved | len }}'
 
-  # Warning alerts - Slack only
+  # Warning alerts - logs only in development
   - name: 'warning-alerts'
-    slack_configs:
-      - api_url: '${SLACK_WEBHOOK_URL}'
-        channel: '#rag-alerts-warning'
-        username: 'RAG AlertManager'
-        icon_emoji: ':warning:'
-        title: '{{ template "slack.title" . }}'
-        text: '{{ template "slack.text" . }}'
-        send_resolved: true
-        color: '{{ if eq .Status "firing" }}warning{{ else }}good{{ end }}'
-
-  # Database alerts - dedicated channel
-  - name: 'database-alerts'
-    slack_configs:
-      - api_url: '${SLACK_WEBHOOK_URL}'
-        channel: '#rag-alerts-database'
-        username: 'RAG DB Monitor'
-        icon_emoji: ':database:'
-        title: 'Database Alert: {{ .GroupLabels.alertname }}'
-        text: '{{ template "slack.text" . }}'
-        send_resolved: true
-    email_configs:
-      - to: 'dba-team@rag-system.local'
-        send_resolved: true
-        headers:
-          Subject: '[RAG-DB] {{ .GroupLabels.alertname }} - {{ .Status | toUpper }}'
-
-  # Security alerts - immediate escalation
-  - name: 'security-alerts'
-    slack_configs:
-      - api_url: '${SLACK_WEBHOOK_URL}'
-        channel: '#rag-alerts-security'
-        username: 'RAG Security'
-        icon_emoji: ':lock:'
-        title: 'SECURITY ALERT: {{ .GroupLabels.alertname }}'
-        text: '{{ template "slack.text" . }}'
-        send_resolved: true
-        color: 'danger'
-    pagerduty_configs:
-      - service_key: '${PAGERDUTY_SECURITY_KEY}'
-        severity: 'critical'
-        description: 'Security Alert: {{ .GroupLabels.alertname }}'
-
-  # Cost alerts - ops team notification
-  - name: 'cost-alerts'
-    slack_configs:
-      - api_url: '${SLACK_WEBHOOK_URL}'
-        channel: '#rag-alerts-cost'
-        username: 'RAG Cost Monitor'
-        icon_emoji: ':money_with_wings:'
-        title: 'Cost Alert: {{ .GroupLabels.alertname }}'
-        text: '{{ template "slack.text" . }}'
-        send_resolved: true
-    email_configs:
-      - to: 'ops-team@rag-system.local'
-        send_resolved: true

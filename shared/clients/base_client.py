@@ -140,13 +140,11 @@ class BaseHTTPClient:
 
         # Make request through circuit breaker
         try:
-            response = await self.circuit_breaker.call_async(
-                self.client.request,
-                method,
-                endpoint,
-                **kwargs
-            )
+            # Check if circuit is open before making request
+            if self.circuit_breaker.current_state == "open":
+                raise CircuitBreakerError(self.circuit_breaker)
 
+            response = await self.client.request(method, endpoint, **kwargs)
             response.raise_for_status()
 
             logger.debug(

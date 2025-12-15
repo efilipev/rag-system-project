@@ -18,4 +18,4 @@ sleep 10
 echo "Chroma should be ready now!"
 
 echo "Starting document-retrieval service..."
-exec uvicorn app.main:app --host 0.0.0.0 --port 8000
+exec uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload

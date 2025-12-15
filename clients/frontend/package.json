@@ -10,18 +10,21 @@
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\""
   },
   "dependencies": {
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "react-aria-components": "^1.4.0",
     "@react-aria/utils": "^3.25.3",
+    "clsx": "^2.1.1",
+    "eventsource-parser": "^1.1.2",
+    "framer-motion": "^11.11.17",
+    "katex": "^0.16.27",
+    "lucide-react": "^0.460.0",
+    "react": "^18.3.1",
+    "react-aria-components": "^1.4.0",
+    "react-dom": "^18.3.1",
     "react-markdown": "^9.0.1",
     "react-pdf": "^9.1.0",
-    "eventsource-parser": "^1.1.2",
-    "uuid": "^10.0.0",
-    "clsx": "^2.1.1",
+    "rehype-katex": "^7.0.1",
+    "remark-math": "^6.0.0",
     "tailwind-merge": "^2.5.4",
-    "lucide-react": "^0.460.0",
-    "framer-motion": "^11.11.17"
+    "uuid": "^10.0.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.15.0",

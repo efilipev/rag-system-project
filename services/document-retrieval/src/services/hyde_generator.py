@@ -11,16 +11,12 @@ Based on the HyDE-ColBERT paper implementation:
 - Adaptive temperature sampling for diversity
 """
 
-import hashlib
-import logging
-import re
 from typing import Dict, List, Optional, Tuple, Union
 
 import httpx
 
 from src.core.config import settings
-
-logger = logging.getLogger(__name__)
+from src.core.logging import logger
 
 
 # Domain-specific system prompts for HyDE generation
@@ -108,7 +104,7 @@ class HyDEGenerator:
         n_hypotheticals: int = 3,
         temperatures: Optional[List[float]] = None,
         max_tokens: int = 256,
-        quality_threshold: float = 0.7,  # Phase 1 optimal (was 0.6, benchmark showed 0.7 is better)
+        quality_threshold: float = 0.7,
         timeout: float = 60.0,
     ):
         """

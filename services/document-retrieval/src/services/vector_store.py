@@ -403,6 +403,8 @@ class VectorStoreService:
             if options is None:
                 options = HyDEColBERTOptions()
 
+            await self._ensure_colbert_index(collection_name, options.domain.value)
+
             results = await self._hyde_colbert_retrieval.retrieve(
                 query=query,
                 collection_name=collection_name,
@@ -429,6 +431,67 @@ class VectorStoreService:
         except Exception as e:
             logger.error(f"Error searching with HyDE-ColBERT: {e}")
             raise
+
+    async def _ensure_colbert_index(
+        self,
+        collection_name: str,
+        domain: str = "general",
+    ) -> None:
+        """
+        Ensure ColBERT index exists for the collection, create if not.
+
+        Args:
+            collection_name: Name of the collection to index
+            domain: Domain for encoder configuration
+        """
+        from src.services.colbert_index import get_colbert_index_manager
+
+        index_manager = get_colbert_index_manager()
+        index = index_manager.get_index(collection_name, auto_load=True)
+
+        if index.is_loaded():
+            logger.info(f"ColBERT index for '{collection_name}' already loaded")
+            return
+
+        # Index doesn't exist or isn't loaded, need to create it
+        if self.qdrant_client is None:
+            raise RuntimeError(
+                f"Cannot create ColBERT index for '{collection_name}': Qdrant not initialized"
+            )
+
+        # Check if the collection exists in Qdrant
+        try:
+            collection_info = self.qdrant_client.get_collection(collection_name)
+            if collection_info.points_count == 0:
+                raise RuntimeError(
+                    f"Cannot create ColBERT index: Qdrant collection '{collection_name}' is empty"
+                )
+        except Exception as e:
+            if "not found" in str(e).lower():
+                raise RuntimeError(
+                    f"Cannot create ColBERT index: Qdrant collection '{collection_name}' does not exist"
+                )
+            raise
+
+        logger.info(
+            f"ColBERT index for '{collection_name}' not found. "
+            f"Creating index from Qdrant collection ({collection_info.points_count} documents)..."
+        )
+
+        # Create the index
+        stats = await index_manager.create_index(
+            collection_name=collection_name,
+            qdrant_client=self.qdrant_client,
+            batch_size=32,
+            limit=None,  # Index all documents
+            domain=domain,
+            save=True,  # Persist to disk for future use
+        )
+
+        logger.info(
+            f"ColBERT index created for '{collection_name}': "
+            f"{stats['stats']['indexed']} documents indexed"
+        )
 
     async def create_colbert_index(
         self,

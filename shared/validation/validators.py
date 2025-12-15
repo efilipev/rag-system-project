@@ -34,8 +34,10 @@ class InputValidator:
     ]
 
     COMMAND_INJECTION_PATTERNS = [
-        r"[;&|`$()]",
-        r"\b(cat|ls|pwd|chmod|rm|mv|cp|curl|wget|nc|bash|sh)\b"
+        r"[;&|`]",  # Removed $ and () to allow LaTeX math notation
+        r"\$\([^)]+\)",  # Shell command substitution $(...)
+        r"`[^`]+`",  # Backtick command substitution
+        r"\b(cat|ls|pwd|chmod|rm|mv|cp|curl|wget|nc|bash|sh)\s+[/\w]",  # Commands with paths
     ]
 
     @staticmethod

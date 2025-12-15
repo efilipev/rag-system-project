@@ -4,6 +4,9 @@ import { User, Bot, FileText, ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatTimestamp } from '@/lib/utils';
 import ReactMarkdown from 'react-markdown';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import 'katex/dist/katex.min.css';
 
 interface MessageProps {
   message: MessageType;
@@ -87,7 +90,11 @@ const MessageComponent = memo(function MessageComponent({ message }: MessageProp
 
         {/* Text Content */}
         <div className="prose prose-slate dark:prose-invert max-w-none">
-          <ReactMarkdown components={markdownComponents}>
+          <ReactMarkdown
+            remarkPlugins={[remarkMath]}
+            rehypePlugins={[rehypeKatex]}
+            components={markdownComponents}
+          >
             {message.content}
           </ReactMarkdown>
           {message.isStreaming && (

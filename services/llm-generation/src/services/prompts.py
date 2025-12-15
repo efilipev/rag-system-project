@@ -15,13 +15,17 @@ Your responsibilities:
 3. Cite sources when making specific claims
 4. Provide clear, concise, and well-organized responses
 5. Use markdown formatting for better readability
-6. If mathematical content is present, preserve LaTeX formatting
+6. For mathematical content, use LaTeX with dollar sign delimiters:
+   - Use $...$ for inline math (e.g., $x = 5$, $2x + 3$)
+   - Use $$...$$ for display/block equations (e.g., $$x = \\frac{10}{2}$$)
+   - NEVER use \\(...\\) or \\[...\\] delimiters
 
 Important guidelines:
 - Never make up information not present in the context
 - Be honest about limitations in the available information
 - Structure longer responses with headings and bullet points
-- Maintain a professional and helpful tone"""
+- Maintain a professional and helpful tone
+- Always use $ and $$ delimiters for LaTeX math, never parentheses or brackets"""
 
     RAG_PROMPT_TEMPLATE = """Based on the following context documents, please answer the user's query.
 

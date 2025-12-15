@@ -76,8 +76,8 @@ class Settings(BaseSettings):
     ENABLE_QUERY_EXPANSION: bool = True
     QUERY_EXPANSION_COUNT: int = 3  # Number of query variations to generate
 
-    # LaTeX Parser Service
-    LATEX_PARSER_URL: str = "http://latex-parser:8104"
+    # LaTeX Parser Service (internal Docker port is 8000)
+    LATEX_PARSER_URL: str = "http://latex-parser:8000"
 
     # Feature Flags
     ENABLE_CACHING: bool = True

@@ -3,12 +3,16 @@ FROM python:3.11-slim
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies (git required for colbert-ai)
 RUN apt-get update && apt-get install -y \
     build-essential \
     curl \
     libpq-dev \
+    git \
     && rm -rf /var/lib/apt/lists/*
+
+# Set git environment for colbert
+ENV GIT_PYTHON_REFRESH=quiet
 
 # Install Poetry
 RUN curl -sSL https://install.python-poetry.org | python3 - \
@@ -33,7 +37,10 @@ RUN poetry install --no-interaction --no-ansi --only-root
 COPY docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
 
-# Create non-root user
+# Create data directory for ColBERT index
+RUN mkdir -p /app/data/colbert_index
+
+# Create non-root user and set ownership
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
 USER appuser
 

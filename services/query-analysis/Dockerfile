@@ -22,8 +22,8 @@ RUN poetry config virtualenvs.create false
 # Install dependencies
 RUN poetry install --no-interaction --no-ansi --no-root --only main
 
-# Download spaCy model (upgraded to larger model for better accuracy)
-RUN python -m spacy download en_core_web_lg
+# Download spaCy model
+RUN python -m spacy download en_core_web_sm
 
 # Copy application code
 COPY . .
@@ -43,4 +43,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:8101/health || exit 1
 
 # Run the application
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8101"]
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8101"]

@@ -11,17 +11,16 @@ Features:
 - Integration with existing RAG retrieval pipeline
 """
 
-import logging
+import time
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
 from src.core.config import settings
+from src.core.logging import logger
 from src.services.hyde_generator import HyDEGenerator, get_hyde_generator
 from src.services.colbert_encoder import ColBERTEncoder, get_colbert_encoder
 from src.services.colbert_index import ColBERTIndex, ColBERTIndexManager, get_colbert_index_manager
-
-logger = logging.getLogger(__name__)
 
 
 class HyDEColBERTRetrieval:
@@ -246,6 +245,10 @@ class HyDEColBERTRetrieval:
         self.stats["hyde_generation_time_ms"] += (time.time() - hyde_start) * 1000
 
         logger.info(f"Generated {len(hypotheticals)} hypotheticals for query: {query[:50]}...")
+
+        # Log each generated HyDE document for debugging/visibility
+        for i, hyde_doc in enumerate(hypotheticals, 1):
+            logger.info(f"HyDE Document {i}/{len(hypotheticals)}:\n{hyde_doc}\n{'='*60}")
 
         # Encode query and hypotheticals
         encode_start = time.time()

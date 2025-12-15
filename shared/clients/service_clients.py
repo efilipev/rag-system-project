@@ -1,8 +1,9 @@
 """
 Service-specific HTTP clients for RAG system microservices
 """
+import json
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, AsyncIterator
 from shared.clients.base_client import BaseHTTPClient
 
 logger = logging.getLogger(__name__)
@@ -44,6 +45,8 @@ class DocumentRetrievalClient(BaseHTTPClient):
     """Client for Document Retrieval Service"""
 
     def __init__(self, base_url: str = "http://localhost:8102", **kwargs):
+        # Longer timeout for HyDE-ColBERT retrieval which can take 2-3 minutes on CPU
+        kwargs.setdefault("timeout", 300.0)
         super().__init__(
             base_url=base_url,
             service_name="document-retrieval",
@@ -77,7 +80,7 @@ class DocumentRetrievalClient(BaseHTTPClient):
             payload["filters"] = filters
 
         return await self.post(
-            "/api/v1/search",
+            "/api/v1/retrieve",
             json=payload,
             correlation_id=correlation_id
         )
@@ -229,6 +232,53 @@ class LLMGenerationClient(BaseHTTPClient):
             json=payload,
             correlation_id=correlation_id
         )
+
+    async def generate_stream(
+        self,
+        query: str,
+        context_documents: List[Dict[str, Any]],
+        parameters: Optional[Dict[str, Any]] = None,
+        correlation_id: Optional[str] = None
+    ) -> AsyncIterator[Dict[str, Any]]:
+        """
+        Generate streaming response using LLM
+
+        Args:
+            query: User query
+            context_documents: Context documents for RAG
+            parameters: Generation parameters (temperature, max_tokens, etc.)
+            correlation_id: Request correlation ID
+
+        Yields:
+            Chunks of generated response
+        """
+        payload = {
+            "query": query,
+            "context_documents": context_documents
+        }
+        if parameters:
+            payload["parameters"] = parameters
+
+        headers = self._prepare_headers(correlation_id)
+
+        async with self.client.stream(
+            "POST",
+            "/api/v1/generate/stream",
+            json=payload,
+            headers=headers,
+            timeout=120.0
+        ) as response:
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                if line.startswith("data: "):
+                    data = line[6:]
+                    if data == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(data)
+                        yield chunk
+                    except json.JSONDecodeError:
+                        logger.warning(f"Failed to parse SSE data: {data}")
 
 
 class ResponseFormatterClient(BaseHTTPClient):
